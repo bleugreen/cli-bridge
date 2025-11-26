@@ -1,0 +1,332 @@
+#!/bin/bash
+# vwcli - Command line interface for VisualWorks Smalltalk via CliBridge
+#
+# Usage:
+#   vwcli classes [pattern]        - List classes (optionally filtered)
+#   vwcli class <name>             - Show class definition
+#   vwcli methods <class> [class]  - List methods (instance or class side)
+#   vwcli source <class> <selector> - Get method source code
+#   vwcli eval <expression>        - Evaluate Smalltalk expression
+#   vwcli namespaces               - List all namespaces
+#   vwcli search <pattern>         - Search classes and methods
+#   vwcli senders <selector>       - Find all senders of a selector
+#   vwcli implementors <selector>  - Find all implementors of a selector
+#   vwcli messages <class> <sel>   - Get messages/literals from a method
+#   vwcli ping                     - Test connection
+#
+# Environment:
+#   VWCLI_HOST - Host to connect to (default: localhost)
+#   VWCLI_PORT - Port to connect to (default: 9999)
+
+set -e
+
+HOST="${VWCLI_HOST:-localhost}"
+PORT="${VWCLI_PORT:-9999}"
+TIMEOUT=5
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+usage() {
+    echo "vwcli - VisualWorks Smalltalk CLI Bridge"
+    echo ""
+    echo "Usage:"
+    echo "  vwcli classes [pattern]          List classes (optionally filtered)"
+    echo "  vwcli class <name>               Show class definition"
+    echo "  vwcli methods <class> [class]    List methods (instance or 'class' side)"
+    echo "  vwcli source <class> <selector>  Get method source code"
+    echo "  vwcli fullsource <class>         Get ALL methods source for a class (alias: fs)"
+    echo "  vwcli hierarchy <class>          Show class hierarchy (alias: hier)"
+    echo "  vwcli eval <expression>          Evaluate Smalltalk expression"
+    echo "  vwcli namespaces                 List all namespaces"
+    echo "  vwcli search <pattern>           Search classes and methods"
+    echo "  vwcli senders <selector>         Find all senders of a selector"
+    echo "  vwcli implementors <selector>    Find all implementors (alias: impl)"
+    echo "  vwcli messages <class> <sel>     Get messages/literals from method"
+    echo "  vwcli ping                       Test connection"
+    echo "  vwcli raw <command>              Send raw command"
+    echo ""
+    echo "Environment:"
+    echo "  VWCLI_HOST  Host (default: localhost)"
+    echo "  VWCLI_PORT  Port (default: 9999)"
+    echo ""
+    echo "Examples:"
+    echo "  vwcli classes Array              # Find classes containing 'Array'"
+    echo "  vwcli class OrderedCollection    # Show class details"
+    echo "  vwcli methods Array              # List Array's instance methods"
+    echo "  vwcli methods Array class        # List Array's class methods"
+    echo "  vwcli source Array at:           # Get source of Array>>at:"
+    echo "  vwcli eval '3 + 4'               # Evaluate expression"
+    echo "  vwcli search 'print'             # Search for 'print' in names"
+    exit 1
+}
+
+send_command() {
+    local cmd="$1"
+    local response
+
+    # Use timeout + nc, reading only the first line of response
+    response=$(echo "$cmd" | timeout "$TIMEOUT" nc "$HOST" "$PORT" 2>/dev/null | head -1)
+
+    if [ -z "$response" ]; then
+        echo -e "${RED}Error: No response from server at $HOST:$PORT${NC}" >&2
+        echo -e "Make sure CliBridge is running: CliBridge startOn: $PORT" >&2
+        exit 1
+    fi
+
+    echo "$response"
+}
+
+parse_json_status() {
+    # Simple JSON status parser
+    local json="$1"
+    if echo "$json" | grep -q '"status":"error"'; then
+        local msg=$(echo "$json" | sed 's/.*"message":"\([^"]*\)".*/\1/')
+        echo -e "${RED}Error: $msg${NC}" >&2
+        return 1
+    fi
+    return 0
+}
+
+extract_data() {
+    # Extract data field from JSON response
+    local json="$1"
+    # Handle either order: {"status":"ok","data":...} or {"data":...,"status":"ok"}
+    # Use grep -oP for more reliable extraction, fallback to sed
+    if command -v jq &> /dev/null; then
+        echo "$json" | jq -c '.data' 2>/dev/null && return
+    fi
+    # Sed fallback: extract value after "data": up to ,"status" or end
+    echo "$json" | sed 's/.*"data"://' | sed 's/,"status".*$//'
+}
+
+format_array() {
+    # Format JSON array for display (one item per line)
+    local data="$1"
+    # Simple approach: remove brackets and split by comma
+    echo "$data" | tr -d '[]"' | tr ',' '\n' | sed 's/^ *//'
+}
+
+format_class_info() {
+    # Format class info dictionary
+    local data="$1"
+    echo -e "${GREEN}Class:${NC} $(echo "$data" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
+    echo -e "${GREEN}Superclass:${NC} $(echo "$data" | grep -o '"superclass":"[^"]*"' | cut -d'"' -f4)"
+    echo -e "${GREEN}Instance Variables:${NC} $(echo "$data" | grep -o '"instanceVariables":\[[^]]*\]' | sed 's/"instanceVariables":\[//' | tr -d '"]' | tr ',' ' ')"
+    echo -e "${GREEN}Class Variables:${NC} $(echo "$data" | grep -o '"classVariables":\[[^]]*\]' | sed 's/"classVariables":\[//' | tr -d '"]' | tr ',' ' ')"
+    echo -e "${GREEN}Category:${NC} $(echo "$data" | grep -o '"category":"[^"]*"' | cut -d'"' -f4)"
+}
+
+format_source() {
+    # Format source code - unescape JSON string
+    local data="$1"
+    # Remove surrounding quotes and unescape
+    echo "$data" | sed 's/^"//' | sed 's/"$//' | sed 's/\\n/\n/g' | sed 's/\\t/\t/g' | sed 's/\\"/"/g'
+}
+
+format_eval_result() {
+    # Format eval result
+    local data="$1"
+    local result=$(echo "$data" | grep -o '"result":"[^"]*"' | cut -d'"' -f4 | sed 's/\\n/\n/g')
+    local class=$(echo "$data" | grep -o '"class":"[^"]*"' | cut -d'"' -f4)
+    echo -e "${GREEN}Result:${NC} $result"
+    echo -e "${BLUE}Class:${NC} $class"
+}
+
+format_search_results() {
+    # Format search results
+    local data="$1"
+    # Parse array of objects
+    echo "$data" | grep -o '{"type":"[^}]*}' | while read -r item; do
+        local type=$(echo "$item" | grep -o '"type":"[^"]*"' | cut -d'"' -f4)
+        if [ "$type" = "class" ]; then
+            local name=$(echo "$item" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
+            echo -e "${YELLOW}[class]${NC} $name"
+        else
+            local class=$(echo "$item" | grep -o '"class":"[^"]*"' | cut -d'"' -f4)
+            local sel=$(echo "$item" | grep -o '"selector":"[^"]*"' | cut -d'"' -f4)
+            echo -e "${BLUE}[method]${NC} $class >> $sel"
+        fi
+    done
+}
+
+# Main command dispatch
+case "${1:-}" in
+    classes)
+        shift
+        pattern="${1:-*}"
+        response=$(send_command "CLASSES $pattern")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_array "$data"
+        fi
+        ;;
+
+    class)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli class <className>"; exit 1; }
+        response=$(send_command "CLASS $1")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_class_info "$data"
+        fi
+        ;;
+
+    methods)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli methods <className> [class|instance]"; exit 1; }
+        className="$1"
+        side="${2:-instance}"
+        response=$(send_command "METHODS $className $side")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_array "$data"
+        fi
+        ;;
+
+    source)
+        shift
+        [ -z "${1:-}" ] || [ -z "${2:-}" ] && { echo "Usage: vwcli source <className> <selector>"; exit 1; }
+        className="$1"
+        shift
+        selector="$*"
+        response=$(send_command "SOURCE $className $selector")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_source "$data"
+        fi
+        ;;
+
+    eval)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli eval <expression>"; exit 1; }
+        expression="$*"
+        response=$(send_command "EVAL $expression")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_eval_result "$data"
+        fi
+        ;;
+
+    namespaces)
+        response=$(send_command "NAMESPACES")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_array "$data"
+        fi
+        ;;
+
+    search)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli search <pattern>"; exit 1; }
+        response=$(send_command "SEARCH $1")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_search_results "$data"
+        fi
+        ;;
+
+    fullsource|fs)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli fullsource <className>"; exit 1; }
+        response=$(send_command "FULLSOURCE $1")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            format_source "$data"
+        fi
+        ;;
+
+    hierarchy|hier)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli hierarchy <className>"; exit 1; }
+        response=$(send_command "HIERARCHY $1")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            # Parse and format hierarchy
+            echo -e "${GREEN}Class:${NC} $(echo "$data" | grep -o '"class":"[^"]*"' | cut -d'"' -f4)"
+            echo -e "${GREEN}Superclasses:${NC}"
+            echo "$data" | grep -o '"superclasses":\[[^]]*\]' | sed 's/"superclasses":\[//' | tr -d '"]' | tr ',' '\n' | sed 's/^/  /'
+            echo -e "${GREEN}Subclasses:${NC}"
+            echo "$data" | grep -o '"subclasses":\[[^]]*\]' | sed 's/"subclasses":\[//' | tr -d '"]' | tr ',' '\n' | sed 's/^/  /'
+        fi
+        ;;
+
+    senders)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli senders <selector>"; exit 1; }
+        response=$(send_command "SENDERS $1")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            echo -e "${GREEN}Senders of #$1:${NC}"
+            echo "$data" | grep -o '{"class":"[^}]*}' | while read -r item; do
+                class=$(echo "$item" | grep -o '"class":"[^"]*"' | cut -d'"' -f4)
+                sel=$(echo "$item" | grep -o '"selector":"[^"]*"' | cut -d'"' -f4)
+                echo "  $class >> $sel"
+            done
+        fi
+        ;;
+
+    implementors|impl)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli implementors <selector>"; exit 1; }
+        response=$(send_command "IMPLEMENTORS $1")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            echo -e "${GREEN}Implementors of #$1:${NC}"
+            echo "$data" | grep -o '{"class":"[^}]*}' | while read -r item; do
+                class=$(echo "$item" | grep -o '"class":"[^"]*"' | cut -d'"' -f4)
+                side=$(echo "$item" | grep -o '"side":"[^"]*"' | cut -d'"' -f4)
+                if [ "$side" = "class" ]; then
+                    echo "  $class class >> $1"
+                else
+                    echo "  $class >> $1"
+                fi
+            done
+        fi
+        ;;
+
+    messages|msgs)
+        shift
+        [ -z "${1:-}" ] || [ -z "${2:-}" ] && { echo "Usage: vwcli messages <className> <selector>"; exit 1; }
+        className="$1"
+        shift
+        selector="$*"
+        response=$(send_command "MESSAGES $className $selector")
+        if parse_json_status "$response"; then
+            data=$(extract_data "$response")
+            echo -e "${GREEN}Method:${NC} $className >> $selector"
+            echo ""
+            echo -e "${BLUE}Messages sent:${NC}"
+            echo "$data" | grep -o '"messages":\[[^]]*\]' | sed 's/"messages":\[//' | tr -d '"]' | tr ',' '\n' | sed 's/^/  #/'
+            echo ""
+            echo -e "${YELLOW}Literals:${NC}"
+            echo "$data" | grep -o '"literals":\[[^]]*\]' | sed 's/"literals":\[//' | sed 's/","/\n/g' | tr -d '[]"' | sed 's/^/  /'
+        fi
+        ;;
+
+    ping)
+        response=$(send_command "PING")
+        if parse_json_status "$response"; then
+            echo -e "${GREEN}Connected to CliBridge at $HOST:$PORT${NC}"
+        fi
+        ;;
+
+    raw)
+        shift
+        [ -z "${1:-}" ] && { echo "Usage: vwcli raw <command>"; exit 1; }
+        send_command "$*"
+        ;;
+
+    -h|--help|help|"")
+        usage
+        ;;
+
+    *)
+        echo "Unknown command: $1"
+        usage
+        ;;
+esac

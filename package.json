@@ -1,0 +1,18 @@
+{
+  "name": "visualworks-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for VisualWorks Smalltalk CliBridge",
+  "type": "module",
+  "main": "vw_mcp_server.js",
+  "bin": {
+    "visualworks-mcp": "./vw_mcp_server.js"
+  },
+  "scripts": {
+    "start": "node vw_mcp_server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "keywords": ["mcp", "visualworks", "smalltalk"],
+  "license": "MIT"
+}

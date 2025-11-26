@@ -1,0 +1,22 @@
+# Node
+node_modules/
+npm-debug.log*
+*.log
+
+# Environment/secrets
+.env
+mcp.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*~
+.vscode/
+.idea/
+
+# VisualWorks Smalltalk (if generated/local)
+*.im
+*.cha

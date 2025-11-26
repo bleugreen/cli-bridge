@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "visualworks": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CLAUDE_PROJECT_DIR}/cli-bridge/vw_mcp_server.js"],
+      "env": {
+        "VWCLI_HOST": "localhost",
+        "VWCLI_PORT": "9999"
+      }
+    }
+  }
+}
