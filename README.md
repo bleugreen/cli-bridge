@@ -19,11 +19,12 @@ A TCP bridge that exposes VisualWorks Smalltalk code browsing and evaluation cap
 "File in the code"
 (Filename named: '/path/to/CliBridge.st') fileIn.
 
-"Start the server (defaults to port 9999)"
-CliBridge start.
-
-"Or specify a port"
+"Start without auth (local development)"
 CliBridge startOn: 9999.
+
+"Start with authentication (production/remote access)"
+CliBridge startWithAuthOn: 9999.
+"Prints API key to Transcript - copy this to your MCP config"
 ```
 
 Or start with command line argument:
@@ -63,12 +64,56 @@ The MCP tools will be available after restart.
 
 ## Configuration
 
-### Environment Variables
+### Multi-Image Configuration (Recommended)
+
+Create a config file to manage multiple Smalltalk images:
+
+**~/.config/clibridge/servers.json** or **~/.clibridge/servers.json**:
+```json
+{
+  "servers": {
+    "local": {
+      "host": "localhost",
+      "port": 9999
+    },
+    "production": {
+      "host": "prod-server.example.com",
+      "port": 9999,
+      "apiKey": "vw_abc123..."
+    },
+    "staging": {
+      "host": "staging.example.com",
+      "port": 9999,
+      "apiKey": "vw_def456..."
+    }
+  },
+  "default": "local"
+}
+```
+
+Then add the MCP server:
+```bash
+claude mcp add --transport stdio visualworks \
+  --env CLIBRIDGE_CONFIG=~/.config/clibridge/servers.json \
+  -- node /path/to/cli-bridge/vw_mcp_server.js
+```
+
+All tools accept an optional `image` parameter to target a specific server:
+```
+mcp__visualworks__classes({ pattern: "Http" })                  # uses default
+mcp__visualworks__classes({ pattern: "Http", image: "production" })  # uses production
+mcp__visualworks__list_images()                                 # shows all servers
+```
+
+### Legacy Environment Variables (Single Server)
+
+For simple setups, you can use environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VWCLI_HOST` | `localhost` | Host running CliBridge |
 | `VWCLI_PORT` | `9999` | Port CliBridge is listening on |
+| `VWCLI_API_KEY` | (none) | API key for authentication |
 
 ### Project-Level Config (.mcp.json)
 
@@ -82,8 +127,7 @@ For team sharing, create `.mcp.json` in your project root:
       "command": "node",
       "args": ["/path/to/cli-bridge/vw_mcp_server.js"],
       "env": {
-        "VWCLI_HOST": "smalltalk-server.local",
-        "VWCLI_PORT": "9999"
+        "CLIBRIDGE_CONFIG": "/path/to/servers.json"
       }
     }
   }
@@ -92,9 +136,12 @@ For team sharing, create `.mcp.json` in your project root:
 
 ## Available Tools
 
+All tools accept an optional `image` parameter to target a specific server from your config.
+
 | Tool | Description |
 |------|-------------|
 | `ping` | Test connection to CliBridge |
+| `list_images` | List all configured servers |
 | `classes` | List classes (with optional pattern filter) |
 | `class_info` | Get class definition (superclass, ivars, cvars) |
 | `methods` | List instance or class methods |
@@ -178,11 +225,46 @@ export VWCLI_PORT=9999
 - Node.js 18+ (run `npm install` in this directory)
 - Claude Code (for MCP integration)
 
-## Security Notes
+## Authentication
 
-- CliBridge listens on all interfaces by default
-- No authentication - use firewall rules for network access
+CliBridge supports optional API key authentication for remote access.
+
+### Enabling Auth (Smalltalk side)
+
+```smalltalk
+"Start with authentication required"
+CliBridge startWithAuthOn: 9999.
+
+"API key is auto-generated and saved to ~/.clibridge/api-key"
+"Also printed to Transcript for copying to your MCP config"
+```
+
+The API key is:
+- Generated once on first `startWithAuthOn:` call
+- Persisted in `~/.clibridge/api-key`
+- Printed to Transcript so you can copy it
+- Can be overridden by `CLIBRIDGE_API_KEY` environment variable (useful for EC2/SSM)
+
+### Auth Protocol
+
+When auth is enabled, clients must prefix commands with `AUTH:key`:
+
+```
+AUTH:vw_abc123 PING
+AUTH:vw_abc123 CLASSES Array
+```
+
+Without auth prefix, you'll receive:
+```json
+{"status":"error","code":"AUTH_REQUIRED","message":"Authentication required"}
+```
+
+### Security Notes
+
+- `startOn:` - No auth, suitable for local development
+- `startWithAuthOn:` - Auth required for ALL connections
 - `eval` command executes arbitrary code - use with caution
+- API keys are transmitted in plaintext - use SSH tunnel or VPN for untrusted networks
 
 ## Troubleshooting
 

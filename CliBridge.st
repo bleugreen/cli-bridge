@@ -15,8 +15,8 @@ Smalltalk defineClass: #CliBridge
     superclass: #{Core.Object}
     indexedType: #none
     private: false
-    instanceVariableNames: 'socket serverProcess port '
-    classInstanceVariableNames: 'default '
+    instanceVariableNames: 'socket serverProcess port requireAuth '
+    classInstanceVariableNames: 'default apiKey '
     imports: ''
     category: 'CliBridge'!
 
@@ -36,10 +36,64 @@ start
     ^self startOn: 9999!
 
 startOn: aPort
-    "Start the CLI bridge server on the given port"
+    "Start the CLI bridge server on the given port (no auth required)"
+    ^self startOn: aPort requireAuth: false!
+
+startWithAuthOn: aPort
+    "Start the CLI bridge server with authentication required for ALL connections"
+    | key |
+    key := self apiKey.  "Triggers generation if needed"
+    Transcript show: 'CliBridge API Key: ', key; cr.
+    ^self startOn: aPort requireAuth: true!
+
+startOn: aPort requireAuth: authRequired
+    "Start the CLI bridge server with explicit auth setting"
     self default notNil ifTrue: [self default stop].
-    self default: (self new startOn: aPort).
+    self default: (self new
+        requireAuth: authRequired;
+        startOn: aPort).
     ^self default! !
+
+!CliBridge class methodsFor: 'authentication'!
+
+apiKey
+    "Return API key - from env var, or from file, or generate new"
+    apiKey ifNotNil: [^apiKey].
+
+    "Check env var first (production override)"
+    (CEnvironment getenv: 'CLIBRIDGE_API_KEY') ifNotNil: [:k |
+        k isEmpty ifFalse: [^apiKey := k]].
+
+    "Check file"
+    self apiKeyFile exists ifTrue: [
+        ^apiKey := self apiKeyFile contentsOfEntireFile withBlanksTrimmed].
+
+    "Generate and persist"
+    ^apiKey := self generateAndSaveKey!
+
+apiKeyFile
+    "Return the path to the API key file"
+    | dir |
+    dir := Filename homeDirectory / '.clibridge'.
+    ^dir / 'api-key'!
+
+generateAndSaveKey
+    "Generate a new API key and save it to file"
+    | key dir file |
+    key := 'vw_', (UUID new printString copyReplaceAll: '-' with: '').
+    dir := self apiKeyFile directory.
+    dir exists ifFalse: [dir makeDirectory].
+    file := self apiKeyFile writeStream.
+    [file nextPutAll: key] ensure: [file close].
+    Transcript show: '=== CliBridge API Key Generated ==='; cr.
+    Transcript show: key; cr.
+    Transcript show: 'Saved to: ', self apiKeyFile asString; cr.
+    Transcript show: '==================================='; cr.
+    ^key!
+
+resetApiKey
+    "Clear cached API key (forces reload on next access)"
+    apiKey := nil! !
 
 !CliBridge class methodsFor: 'startup'!
 
@@ -76,7 +130,13 @@ port
     ^port!
 
 port: aNumber
-    port := aNumber! !
+    port := aNumber!
+
+requireAuth
+    ^requireAuth ifNil: [false]!
+
+requireAuth: aBoolean
+    requireAuth := aBoolean! !
 
 !CliBridge methodsFor: 'server control'!
 
@@ -86,7 +146,10 @@ startOn: aPort
     socket := SocketAccessor newTCPserverAtPort: port.
     socket soReuseaddr: true.
     socket listenFor: 5.
-    Transcript show: 'CliBridge: Listening on localhost:', port printString; cr.
+    Transcript show: 'CliBridge: Listening on port ', port printString; cr.
+    self requireAuth
+        ifTrue: [Transcript show: 'CliBridge: Authentication REQUIRED'; cr]
+        ifFalse: [Transcript show: 'CliBridge: Authentication disabled'; cr].
     serverProcess := [
         [socket isActive] whileTrue: [
             | clientSocket |
@@ -109,8 +172,8 @@ stop
 !CliBridge methodsFor: 'client handling'!
 
 handleClient: clientSocket
-    "Handle a client connection"
-    | conn stream line response |
+    "Handle a client connection with optional authentication"
+    | conn stream line response authKey command |
     [
         [
             conn := ExternalConnection new
@@ -122,11 +185,36 @@ handleClient: clientSocket
                 clientSocket readWait.
                 line := self readLineFrom: stream.
                 (line isNil or: [line isEmpty]) ifFalse: [
-                    response := self processCommand: line.
+                    "Parse AUTH:key prefix if present"
+                    (line beginsWith: 'AUTH:') ifTrue: [
+                        | spaceIndex |
+                        spaceIndex := line indexOf: Character space ifAbsent: [line size + 1].
+                        authKey := line copyFrom: 6 to: spaceIndex - 1.
+                        command := spaceIndex < line size
+                            ifTrue: [line copyFrom: spaceIndex + 1 to: line size]
+                            ifFalse: [''].
+                    ] ifFalse: [
+                        authKey := nil.
+                        command := line.
+                    ].
+
+                    "Check auth if required"
+                    self requireAuth ifTrue: [
+                        authKey isNil ifTrue: [
+                            response := self errorJsonWithCode: 'AUTH_REQUIRED' message: 'Authentication required'.
+                            stream nextPutAll: response; cr; commit.
+                            ^self].
+                        (self validateApiKey: authKey) ifFalse: [
+                            response := self errorJsonWithCode: 'AUTH_FAILED' message: 'Invalid API key'.
+                            stream nextPutAll: response; cr; commit.
+                            ^self]].
+
+                    "Process the command"
+                    response := self processCommand: command.
                     stream nextPutAll: response.
                     stream cr.
                     stream commit.
-                    ^self  "close after one request for now"]].
+                    ^self  "close after one request"]].
         ] on: Error do: [:e |
             Transcript show: 'CliBridge client error: ', e messageText; cr].
     ] ensure: [clientSocket close]!
@@ -452,7 +540,14 @@ findClass: aString
     Smalltalk allClasses do: [:c |
         (c name asString endsWith: aString) ifTrue: [^c]].
 
-    ^nil! !
+    ^nil!
+
+validateApiKey: aKey
+    "Validate the provided API key against the configured key"
+    | expectedKey |
+    expectedKey := self class apiKey.
+    expectedKey isNil ifTrue: [^true].  "No key configured = allow all"
+    ^expectedKey = aKey! !
 
 !CliBridge methodsFor: 'json encoding'!
 
@@ -467,6 +562,14 @@ errorJson: message
     "Return error JSON"
     ^self toJson: (Dictionary new
         at: 'status' put: 'error';
+        at: 'message' put: message asString;
+        yourself)!
+
+errorJsonWithCode: code message: message
+    "Return error JSON with error code"
+    ^self toJson: (Dictionary new
+        at: 'status' put: 'error';
+        at: 'code' put: code asString;
         at: 'message' put: message asString;
         yourself)!
 
