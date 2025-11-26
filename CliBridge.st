@@ -758,31 +758,48 @@ cmdComment: args
         yourself)!
 
 cmdGlobals: args
-    "List global variables, optionally filtered by pattern.
-     Usage: GLOBALS [pattern]"
-    | pattern results |
+    "List global variables, optionally filtered by pattern with pagination.
+     Usage: GLOBALS [pattern] [limit] [offset]"
+    | pattern limit offset results allKeys filteredKeys total startIdx endIdx |
     pattern := args isEmpty ifTrue: ['*'] ifFalse: [args first asLowercase].
+    limit := args size > 1 ifTrue: [(args at: 2) asNumber] ifFalse: [50].
+    offset := args size > 2 ifTrue: [(args at: 3) asNumber] ifFalse: [0].
+
+    allKeys := Smalltalk keys asSortedCollection.
+    filteredKeys := pattern = '*'
+        ifTrue: [allKeys]
+        ifFalse: [allKeys select: [:key |
+            (key asString asLowercase findString: pattern startingAt: 1) > 0]].
+
+    total := filteredKeys size.
+    startIdx := ((offset + 1) max: 1) min: (total max: 1).
+    endIdx := (offset + limit) min: total.
+
     results := OrderedCollection new.
+    startIdx to: endIdx do: [:i |
+        | key value entry |
+        key := filteredKeys at: i.
+        value := Smalltalk at: key ifAbsent: [nil].
+        entry := Dictionary new
+            at: 'name' put: key asString;
+            at: 'class' put: value class name asString;
+            yourself.
+        "Include value preview for simple objects"
+        (value isKindOf: Boolean) ifTrue: [entry at: 'value' put: value].
+        (value isKindOf: Number) ifTrue: [entry at: 'value' put: value].
+        (value isKindOf: String) ifTrue: [
+            entry at: 'value' put: (value size > 100
+                ifTrue: [(value copyFrom: 1 to: 100), '...']
+                ifFalse: [value])].
+        value isNil ifTrue: [entry at: 'value' put: nil].
+        results add: entry].
 
-    Smalltalk keys asSortedCollection do: [:key |
-        | value entry |
-        (pattern = '*' or: [(key asString asLowercase findString: pattern startingAt: 1) > 0]) ifTrue: [
-            value := Smalltalk at: key ifAbsent: [nil].
-            entry := Dictionary new
-                at: 'name' put: key asString;
-                at: 'class' put: value class name asString;
-                yourself.
-            "Include value preview for simple objects"
-            (value isKindOf: Boolean) ifTrue: [entry at: 'value' put: value].
-            (value isKindOf: Number) ifTrue: [entry at: 'value' put: value].
-            (value isKindOf: String) ifTrue: [
-                entry at: 'value' put: (value size > 100
-                    ifTrue: [(value copyFrom: 1 to: 100), '...']
-                    ifFalse: [value])].
-            value isNil ifTrue: [entry at: 'value' put: nil].
-            results add: entry]].
-
-    ^self okJson: results asArray! !
+    ^self okJson: (Dictionary new
+        at: 'items' put: results asArray;
+        at: 'total' put: total;
+        at: 'offset' put: offset;
+        at: 'limit' put: limit;
+        yourself)! !
 
 !CliBridge methodsFor: 'helpers'!
 

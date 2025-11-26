@@ -634,22 +634,32 @@ server.tool(
   {
     pattern: z.string().optional().default("*")
       .describe("Filter pattern (case-insensitive substring match). Use '*' for all."),
+    limit: z.number().optional().default(50)
+      .describe("Maximum number of results to return (default 50)"),
+    offset: z.number().optional().default(0)
+      .describe("Number of results to skip for pagination (default 0)"),
     image: z.string().optional().describe("Server name from config (uses default if omitted)")
   },
-  async ({ pattern = "*", image }) => {
-    const result = await sendCommand(`GLOBALS ${pattern}`, image);
+  async ({ pattern = "*", limit = 50, offset = 0, image }) => {
+    const result = await sendCommand(`GLOBALS ${pattern} ${limit} ${offset}`, image);
 
     if (result.status === "ok") {
-      const data = result.data || [];
-      if (!data.length) return { content: [{ type: "text", text: "No globals found" }] };
+      const d = result.data;
+      const items = d.items || [];
+      if (!items.length) return { content: [{ type: "text", text: "No globals found" }] };
 
-      const lines = data.map(item => {
+      const lines = items.map(item => {
         let line = `${item.name} (${item.class})`;
         if (item.value !== undefined) {
           line += ` = ${JSON.stringify(item.value)}`;
         }
         return line;
       });
+
+      // Add pagination info
+      const showing = `Showing ${d.offset + 1}-${d.offset + items.length} of ${d.total}`;
+      lines.unshift(showing, "");
+
       return { content: [{ type: "text", text: lines.join("\n") }] };
     }
     return { content: [{ type: "text", text: formatResponse(result) }] };
