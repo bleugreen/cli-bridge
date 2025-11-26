@@ -324,7 +324,9 @@ server.tool(
     image: z.string().optional().describe("Server name from config (uses default if omitted)")
   },
   async ({ expression, image }) => {
-    const result = await sendCommand(`EVAL ${expression}`, image);
+    // Base64 encode to support multi-line expressions
+    const encoded = Buffer.from(expression, 'utf8').toString('base64');
+    const result = await sendCommand(`EVAL64 ${encoded}`, image);
     if (result.status === "ok") {
       const d = result.data;
       return { content: [{ type: "text", text: `${d.result} (${d.class})` }] };
@@ -556,6 +558,101 @@ server.tool(
       return `${name}: ${s.host}:${s.port}${hasAuth}${isDefault}`;
     });
     return { content: [{ type: "text", text: lines.join('\n') }] };
+  }
+);
+
+// Tool: delete (unified delete for class or method)
+server.tool(
+  "delete",
+  "Delete a class or method from the VisualWorks image. Use with caution!",
+  {
+    class_name: z.string().describe("The class name to delete, or the class containing the method"),
+    selector: z.string().optional().describe("If provided, deletes this method instead of the class"),
+    side: z.enum(["instance", "class"]).optional().default("instance")
+      .describe("'instance' or 'class' side (only used when deleting a method)"),
+    image: z.string().optional().describe("Server name from config (uses default if omitted)")
+  },
+  async ({ class_name, selector, side = "instance", image }) => {
+    let command;
+    if (selector) {
+      command = `DELETE ${class_name} ${selector} ${side}`;
+    } else {
+      command = `DELETE ${class_name}`;
+    }
+    const result = await sendCommand(command, image);
+
+    if (result.status === "ok") {
+      const d = result.data;
+      if (d.deleted === "class") {
+        return { content: [{ type: "text", text: `Deleted class ${d.name}` }] };
+      } else {
+        const sideLabel = d.side === "class" ? " (class side)" : "";
+        return { content: [{ type: "text", text: `Deleted ${d.class}>>${d.selector}${sideLabel}` }] };
+      }
+    }
+    return { content: [{ type: "text", text: formatResponse(result) }] };
+  }
+);
+
+// Tool: class_comment (get or set)
+server.tool(
+  "class_comment",
+  "Get or set a class comment/documentation",
+  {
+    class_name: z.string().describe("The class name"),
+    comment: z.string().optional().describe("If provided, sets the comment. If omitted, returns current comment."),
+    image: z.string().optional().describe("Server name from config (uses default if omitted)")
+  },
+  async ({ class_name, comment, image }) => {
+    let result;
+    if (comment !== undefined) {
+      // Set comment
+      const encoded = Buffer.from(comment, 'utf8').toString('base64');
+      result = await sendCommand(`COMMENT ${class_name} ${encoded}`, image);
+    } else {
+      // Get comment
+      result = await sendCommand(`COMMENT ${class_name}`, image);
+    }
+
+    if (result.status === "ok") {
+      const d = result.data;
+      if (d.updated) {
+        return { content: [{ type: "text", text: `Updated comment for ${d.class}` }] };
+      } else {
+        const text = d.comment || "(no comment)";
+        return { content: [{ type: "text", text: `${d.class}:\n${text}` }] };
+      }
+    }
+    return { content: [{ type: "text", text: formatResponse(result) }] };
+  }
+);
+
+// Tool: globals
+server.tool(
+  "globals",
+  "List global variables in the Smalltalk system dictionary",
+  {
+    pattern: z.string().optional().default("*")
+      .describe("Filter pattern (case-insensitive substring match). Use '*' for all."),
+    image: z.string().optional().describe("Server name from config (uses default if omitted)")
+  },
+  async ({ pattern = "*", image }) => {
+    const result = await sendCommand(`GLOBALS ${pattern}`, image);
+
+    if (result.status === "ok") {
+      const data = result.data || [];
+      if (!data.length) return { content: [{ type: "text", text: "No globals found" }] };
+
+      const lines = data.map(item => {
+        let line = `${item.name} (${item.class})`;
+        if (item.value !== undefined) {
+          line += ` = ${JSON.stringify(item.value)}`;
+        }
+        return line;
+      });
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+    return { content: [{ type: "text", text: formatResponse(result) }] };
   }
 );
 

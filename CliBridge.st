@@ -258,6 +258,7 @@ processCommand: aString
         idx > 0
             ifTrue: [^self cmdEval: (aString copyFrom: idx + 1 to: aString size)]
             ifFalse: [^self errorJson: 'Usage: EVAL expression']].
+    command = 'EVAL64' ifTrue: [^self cmdEval64: args].
     command = 'NAMESPACES' ifTrue: [^self cmdNamespaces: args].
     command = 'SEARCH' ifTrue: [^self cmdSearch: args].
     command = 'FULLSOURCE' ifTrue: [^self cmdFullSource: args].
@@ -270,6 +271,9 @@ processCommand: aString
     command = 'EDIT' ifTrue: [^self cmdEdit: args].
     command = 'UNDO' ifTrue: [^self cmdUndo: args].
     command = 'CREATECLASS' ifTrue: [^self cmdCreateClass: args].
+    command = 'DELETE' ifTrue: [^self cmdDelete: args].
+    command = 'COMMENT' ifTrue: [^self cmdComment: args].
+    command = 'GLOBALS' ifTrue: [^self cmdGlobals: args].
 
     ^self errorJson: 'Unknown command: ', command! !
 
@@ -345,10 +349,12 @@ cmdSource: args
 
 cmdEval: expression
     "Evaluate a Smalltalk expression"
-    | result printed |
+    | result printed wrappedExpr |
     expression isEmpty ifTrue: [^self errorJson: 'Usage: EVAL expression'].
     [
-        result := Compiler evaluate: expression.
+        "Wrap in block to properly return value from expressions with temps"
+        wrappedExpr := '[', expression, '] value'.
+        result := Compiler evaluate: wrappedExpr.
         printed := [result printString] on: Error do: [:e | '(error in printString)'].
     ] on: Error do: [:e |
         ^self errorJson: 'Evaluation error: ', e messageText].
@@ -356,6 +362,14 @@ cmdEval: expression
         at: 'result' put: printed;
         at: 'class' put: result class name asString;
         yourself)!
+
+cmdEval64: args
+    "Evaluate a Base64-encoded Smalltalk expression (supports multi-line)"
+    | expression |
+    args isEmpty ifTrue: [^self errorJson: 'Usage: EVAL64 base64EncodedExpression'].
+    [expression := self decodeBase64: args first]
+        on: Error do: [:e | ^self errorJson: 'Base64 decode error: ', e messageText].
+    ^self cmdEval: expression!
 
 cmdNamespaces: args
     "List all namespaces"
@@ -661,7 +675,114 @@ cmdCreateClass: args
         at: 'name' put: newClass name asString;
         at: 'superclass' put: superclass name asString;
         at: 'category' put: category;
-        yourself)! !
+        yourself)!
+
+cmdDelete: args
+    "Delete a class or method.
+     Usage: DELETE className [selector [side]]
+     - DELETE MyClass - deletes the class
+     - DELETE MyClass myMethod - deletes instance method
+     - DELETE MyClass myMethod class - deletes class method"
+    | className selector side class targetClass |
+    args isEmpty ifTrue: [^self errorJson: 'Usage: DELETE className [selector [side]]'].
+
+    className := args first.
+    class := self findClass: className.
+    class isNil ifTrue: [^self errorJson: 'Class not found: ', className].
+
+    "If only class name provided, delete the class"
+    args size = 1 ifTrue: [
+        | name |
+        name := class name.
+        class subclasses isEmpty ifFalse: [
+            ^self errorJson: 'Cannot delete class with subclasses: ', name asString].
+        [class removeFromSystem]
+            on: Error do: [:e | ^self errorJson: 'Delete error: ', e messageText].
+        ^self okJson: (Dictionary new
+            at: 'deleted' put: 'class';
+            at: 'name' put: name asString;
+            yourself)].
+
+    "Otherwise delete a method"
+    selector := (args at: 2) asSymbol.
+    side := args size > 2 ifTrue: [args at: 3] ifFalse: ['instance'].
+
+    targetClass := side = 'class'
+        ifTrue: [class class]
+        ifFalse: [class].
+
+    (targetClass includesSelector: selector) ifFalse: [
+        ^self errorJson: 'Method not found: ', className, '>>', selector asString].
+
+    [targetClass removeSelector: selector]
+        on: Error do: [:e | ^self errorJson: 'Delete error: ', e messageText].
+
+    ^self okJson: (Dictionary new
+        at: 'deleted' put: 'method';
+        at: 'class' put: className;
+        at: 'selector' put: selector asString;
+        at: 'side' put: side;
+        yourself)!
+
+cmdComment: args
+    "Get or set a class comment.
+     Usage: COMMENT className [base64EncodedComment]
+     - COMMENT MyClass - returns the comment
+     - COMMENT MyClass base64Text - sets the comment"
+    | className class comment |
+    args isEmpty ifTrue: [^self errorJson: 'Usage: COMMENT className [base64Comment]'].
+
+    className := args first.
+    class := self findClass: className.
+    class isNil ifTrue: [^self errorJson: 'Class not found: ', className].
+
+    "Get comment"
+    args size = 1 ifTrue: [
+        comment := class comment ifNil: [''].
+        ^self okJson: (Dictionary new
+            at: 'class' put: className;
+            at: 'comment' put: comment asString;
+            yourself)].
+
+    "Set comment"
+    [comment := self decodeBase64: (args at: 2)]
+        on: Error do: [:e | ^self errorJson: 'Base64 decode error: ', e messageText].
+
+    [class comment: comment]
+        on: Error do: [:e | ^self errorJson: 'Error setting comment: ', e messageText].
+
+    ^self okJson: (Dictionary new
+        at: 'class' put: className;
+        at: 'comment' put: comment;
+        at: 'updated' put: true;
+        yourself)!
+
+cmdGlobals: args
+    "List global variables, optionally filtered by pattern.
+     Usage: GLOBALS [pattern]"
+    | pattern results |
+    pattern := args isEmpty ifTrue: ['*'] ifFalse: [args first asLowercase].
+    results := OrderedCollection new.
+
+    Smalltalk keys asSortedCollection do: [:key |
+        | value entry |
+        (pattern = '*' or: [(key asString asLowercase findString: pattern startingAt: 1) > 0]) ifTrue: [
+            value := Smalltalk at: key ifAbsent: [nil].
+            entry := Dictionary new
+                at: 'name' put: key asString;
+                at: 'class' put: value class name asString;
+                yourself.
+            "Include value preview for simple objects"
+            (value isKindOf: Boolean) ifTrue: [entry at: 'value' put: value].
+            (value isKindOf: Number) ifTrue: [entry at: 'value' put: value].
+            (value isKindOf: String) ifTrue: [
+                entry at: 'value' put: (value size > 100
+                    ifTrue: [(value copyFrom: 1 to: 100), '...']
+                    ifFalse: [value])].
+            value isNil ifTrue: [entry at: 'value' put: nil].
+            results add: entry]].
+
+    ^self okJson: results asArray! !
 
 !CliBridge methodsFor: 'helpers'!
 
