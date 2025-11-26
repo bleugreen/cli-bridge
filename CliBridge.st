@@ -73,14 +73,19 @@ apiKey
 
 apiKeyFile
     "Return the path to the API key file"
-    | dir |
-    dir := Filename homeDirectory / '.clibridge'.
+    | dir home |
+    home := (CEnvironment getenv: 'HOME') ifNil: ['.'].
+    dir := (Filename named: home) / '.clibridge'.
     ^dir / 'api-key'!
 
 generateAndSaveKey
     "Generate a new API key and save it to file"
-    | key dir file |
-    key := 'vw_', (UUID new printString copyReplaceAll: '-' with: '').
+    | key dir file rand hex stream |
+    rand := Random new.
+    hex := '0123456789abcdef'.
+    stream := WriteStream on: (String new: 32).
+    32 timesRepeat: [stream nextPut: (hex at: (rand next * 16) truncated + 1)].
+    key := 'vw_', stream contents.
     dir := self apiKeyFile directory.
     dir exists ifFalse: [dir makeDirectory].
     file := self apiKeyFile writeStream.
