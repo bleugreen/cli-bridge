@@ -16,7 +16,7 @@ Smalltalk defineClass: #CliBridge
     indexedType: #none
     private: false
     instanceVariableNames: 'socket serverProcess port requireAuth '
-    classInstanceVariableNames: 'default apiKey '
+    classInstanceVariableNames: 'default apiKey previousSources '
     imports: ''
     category: 'CliBridge'!
 
@@ -98,7 +98,11 @@ generateAndSaveKey
 
 resetApiKey
     "Clear cached API key (forces reload on next access)"
-    apiKey := nil! !
+    apiKey := nil!
+
+previousSources
+    "Return dictionary for single-level undo storage"
+    ^previousSources ifNil: [previousSources := Dictionary new]! !
 
 !CliBridge class methodsFor: 'startup'!
 
@@ -263,6 +267,9 @@ processCommand: aString
     command = 'SENDERS' ifTrue: [^self cmdSenders: args].
     command = 'IMPLEMENTORS' ifTrue: [^self cmdImplementors: args].
     command = 'MESSAGES' ifTrue: [^self cmdMessages: args].
+    command = 'EDIT' ifTrue: [^self cmdEdit: args].
+    command = 'UNDO' ifTrue: [^self cmdUndo: args].
+    command = 'CREATECLASS' ifTrue: [^self cmdCreateClass: args].
 
     ^self errorJson: 'Unknown command: ', command! !
 
@@ -526,7 +533,135 @@ cmdMessages: args
     result at: 'selector' put: selector asString.
     result at: 'messages' put: msgs.
     result at: 'literals' put: lits.
-    ^self okJson: result! !
+    ^self okJson: result!
+
+cmdEdit: args
+    "Edit or create a method. Args: className selector side base64Source
+     side is 'instance' or 'class'"
+    | className selector side encodedSource source class targetClass oldMethod key |
+    args size < 4 ifTrue: [^self errorJson: 'Usage: EDIT className selector side base64Source'].
+
+    className := args first.
+    selector := (args at: 2) asSymbol.
+    side := args at: 3.
+    encodedSource := args at: 4.
+
+    "Decode Base64"
+    [source := self decodeBase64: encodedSource]
+        on: Error do: [:e | ^self errorJson: 'Base64 decode error: ', e messageText].
+
+    "Find class"
+    class := self findClass: className.
+    class isNil ifTrue: [^self errorJson: 'Class not found: ', className].
+
+    "Instance or class side"
+    targetClass := side = 'class'
+        ifTrue: [class class]
+        ifFalse: [class].
+
+    "Capture existing method for single-level undo"
+    key := className, '>>', (args at: 2), '@', side.
+    oldMethod := targetClass compiledMethodAt: selector ifAbsent: [nil].
+    oldMethod notNil ifTrue: [
+        oldMethod getSource notNil ifTrue: [
+            self class previousSources at: key put: oldMethod getSource asString]].
+
+    "Compile"
+    [targetClass compile: source classified: 'modified by CliBridge']
+        on: Error do: [:e | ^self errorJson: 'Compile error: ', e messageText].
+
+    ^self okJson: (Dictionary new
+        at: 'class' put: className;
+        at: 'selector' put: selector asString;
+        at: 'side' put: side;
+        at: 'wasNew' put: oldMethod isNil;
+        yourself)!
+
+cmdUndo: args
+    "Undo last edit to a method. Args: className selector side"
+    | className selector side key previousSource class targetClass |
+    args size < 3 ifTrue: [^self errorJson: 'Usage: UNDO className selector side'].
+
+    className := args first.
+    selector := (args at: 2) asSymbol.
+    side := args at: 3.
+    key := className, '>>', (args at: 2), '@', side.
+
+    previousSource := self class previousSources at: key ifAbsent: [nil].
+    previousSource isNil ifTrue: [^self errorJson: 'No previous version for ', key].
+
+    class := self findClass: className.
+    class isNil ifTrue: [^self errorJson: 'Class not found: ', className].
+
+    targetClass := side = 'class' ifTrue: [class class] ifFalse: [class].
+
+    [targetClass compile: previousSource classified: 'restored by CliBridge']
+        on: Error do: [:e | ^self errorJson: 'Restore error: ', e messageText].
+
+    "Clear the undo after use (single-level)"
+    self class previousSources removeKey: key ifAbsent: [].
+
+    ^self okJson: (Dictionary new
+        at: 'restored' put: true;
+        at: 'class' put: className;
+        at: 'selector' put: selector asString;
+        at: 'side' put: side;
+        yourself)!
+
+cmdCreateClass: args
+    "Create a new class. Args: base64JsonPayload
+     JSON: {name, superclass, instanceVariables, classVariables, classInstanceVariables, category}"
+    | json name superclassName superclass instVars classVars classInstVars category newClass definition |
+    args isEmpty ifTrue: [^self errorJson: 'Usage: CREATECLASS base64JsonPayload'].
+
+    "Decode and parse JSON payload"
+    [json := self parseJson: (self decodeBase64: args first)]
+        on: Error do: [:e | ^self errorJson: 'Invalid payload: ', e messageText].
+
+    name := json at: 'name' ifAbsent: [^self errorJson: 'Missing class name'].
+    superclassName := json at: 'superclass' ifAbsent: ['Object'].
+    instVars := json at: 'instanceVariables' ifAbsent: [#()].
+    classVars := json at: 'classVariables' ifAbsent: [#()].
+    classInstVars := json at: 'classInstanceVariables' ifAbsent: [#()].
+    category := json at: 'category' ifAbsent: ['CliBridge-Created'].
+
+    "Check if class already exists"
+    (self findClass: name) notNil ifTrue: [
+        ^self errorJson: 'Class already exists: ', name].
+
+    "Find superclass"
+    superclass := self findClass: superclassName.
+    superclass isNil ifTrue: [^self errorJson: 'Superclass not found: ', superclassName].
+
+    "Build instance variable string"
+    instVars := instVars isString
+        ifTrue: [instVars]
+        ifFalse: [instVars inject: '' into: [:acc :v | acc, (acc isEmpty ifTrue: [''] ifFalse: [' ']), v asString]].
+    classVars := classVars isString
+        ifTrue: [classVars]
+        ifFalse: [classVars inject: '' into: [:acc :v | acc, (acc isEmpty ifTrue: [''] ifFalse: [' ']), v asString]].
+    classInstVars := classInstVars isString
+        ifTrue: [classInstVars]
+        ifFalse: [classInstVars inject: '' into: [:acc :v | acc, (acc isEmpty ifTrue: [''] ifFalse: [' ']), v asString]].
+
+    "Create the class using subclass protocol"
+    [
+        newClass := superclass
+            subclass: name asSymbol
+            instanceVariableNames: instVars
+            classVariableNames: classVars
+            poolDictionaries: ''
+            category: category.
+        classInstVars isEmpty ifFalse: [
+            newClass class instanceVariableNames: classInstVars].
+    ] on: Error do: [:e | ^self errorJson: 'Class creation error: ', e messageText].
+
+    ^self okJson: (Dictionary new
+        at: 'created' put: true;
+        at: 'name' put: newClass name asString;
+        at: 'superclass' put: superclass name asString;
+        at: 'category' put: category;
+        yourself)! !
 
 !CliBridge methodsFor: 'helpers'!
 
@@ -552,7 +687,130 @@ validateApiKey: aKey
     | expectedKey |
     expectedKey := self class apiKey.
     expectedKey isNil ifTrue: [^true].  "No key configured = allow all"
-    ^expectedKey = aKey! !
+    ^expectedKey = aKey!
+
+decodeBase64: aString
+    "Decode a Base64-encoded string to bytes, then convert to String"
+    | alphabet input output buffer bits count char idx |
+    alphabet := 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.
+    input := aString reject: [:c | c = Character cr or: [c = Character lf or: [c = Character space]]].
+    output := WriteStream on: (String new: input size * 3 // 4).
+    buffer := 0.
+    bits := 0.
+
+    1 to: input size do: [:i |
+        char := input at: i.
+        char = $= ifFalse: [
+            idx := alphabet indexOf: char.
+            idx > 0 ifTrue: [
+                buffer := (buffer bitShift: 6) bitOr: (idx - 1).
+                bits := bits + 6.
+                bits >= 8 ifTrue: [
+                    bits := bits - 8.
+                    output nextPut: (Character value: ((buffer bitShift: bits negated) bitAnd: 16rFF)).
+                    buffer := buffer bitAnd: ((1 bitShift: bits) - 1)]]]].
+
+    ^output contents!
+
+parseJson: aString
+    "Parse a JSON string into Smalltalk objects (Dictionary, Array, String, Number, Boolean, nil)"
+    | stream |
+    stream := ReadStream on: aString.
+    ^self parseJsonValue: stream!
+
+parseJsonValue: stream
+    "Parse a JSON value from stream"
+    | char |
+    self skipJsonWhitespace: stream.
+    stream atEnd ifTrue: [self error: 'Unexpected end of JSON'].
+    char := stream peek.
+    char = ${ ifTrue: [^self parseJsonObject: stream].
+    char = $[ ifTrue: [^self parseJsonArray: stream].
+    char = $" ifTrue: [^self parseJsonString: stream].
+    char = $t ifTrue: [^self parseJsonTrue: stream].
+    char = $f ifTrue: [^self parseJsonFalse: stream].
+    char = $n ifTrue: [^self parseJsonNull: stream].
+    (char isDigit or: [char = $-]) ifTrue: [^self parseJsonNumber: stream].
+    self error: 'Invalid JSON character: ', char asString!
+
+parseJsonObject: stream
+    "Parse a JSON object {}"
+    | dict key |
+    dict := Dictionary new.
+    stream next.  "skip {"
+    self skipJsonWhitespace: stream.
+    stream peek = $} ifTrue: [stream next. ^dict].
+    [
+        self skipJsonWhitespace: stream.
+        key := self parseJsonString: stream.
+        self skipJsonWhitespace: stream.
+        stream next = $: ifFalse: [self error: 'Expected : in JSON object'].
+        dict at: key put: (self parseJsonValue: stream).
+        self skipJsonWhitespace: stream.
+        stream peek = $}
+    ] whileFalse: [
+        stream next = $, ifFalse: [self error: 'Expected , or } in JSON object']].
+    stream next.  "skip }"
+    ^dict!
+
+parseJsonArray: stream
+    "Parse a JSON array []"
+    | array |
+    array := OrderedCollection new.
+    stream next.  "skip ["
+    self skipJsonWhitespace: stream.
+    stream peek = $] ifTrue: [stream next. ^array asArray].
+    [
+        array add: (self parseJsonValue: stream).
+        self skipJsonWhitespace: stream.
+        stream peek = $]
+    ] whileFalse: [
+        stream next = $, ifFalse: [self error: 'Expected , or ] in JSON array']].
+    stream next.  "skip ]"
+    ^array asArray!
+
+parseJsonString: stream
+    "Parse a JSON string"
+    | output char |
+    stream next = $" ifFalse: [self error: 'Expected " to start string'].
+    output := WriteStream on: (String new: 32).
+    [stream atEnd] whileFalse: [
+        char := stream next.
+        char = $" ifTrue: [^output contents].
+        char = $\ ifTrue: [
+            char := stream next.
+            char = $n ifTrue: [output nextPut: Character lf].
+            char = $r ifTrue: [output nextPut: Character cr].
+            char = $t ifTrue: [output nextPut: Character tab].
+            char = $\ ifTrue: [output nextPut: $\].
+            char = $" ifTrue: [output nextPut: $"].
+            char = $/ ifTrue: [output nextPut: $/].
+            "Skip \u for now"
+        ] ifFalse: [output nextPut: char]].
+    self error: 'Unterminated JSON string'!
+
+parseJsonNumber: stream
+    "Parse a JSON number"
+    | output char |
+    output := WriteStream on: (String new: 16).
+    [stream atEnd not and: [(char := stream peek) isDigit or: ['-+.eE' includes: char]]]
+        whileTrue: [output nextPut: stream next].
+    ^Number readFrom: output contents!
+
+parseJsonTrue: stream
+    stream next: 4.  "skip 'true'"
+    ^true!
+
+parseJsonFalse: stream
+    stream next: 5.  "skip 'false'"
+    ^false!
+
+parseJsonNull: stream
+    stream next: 4.  "skip 'null'"
+    ^nil!
+
+skipJsonWhitespace: stream
+    [stream atEnd not and: [stream peek isSeparator]] whileTrue: [stream next]! !
 
 !CliBridge methodsFor: 'json encoding'!
 

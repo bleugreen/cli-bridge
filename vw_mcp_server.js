@@ -454,6 +454,95 @@ server.tool(
   }
 );
 
+// Tool: edit_method
+server.tool(
+  "edit_method",
+  "Add or replace a method in a VisualWorks class. Automatically backs up existing method for single-level undo.",
+  {
+    class_name: z.string().describe("The class name"),
+    selector: z.string().describe("Method selector (e.g., 'at:', 'at:put:', 'initialize')"),
+    source: z.string().describe("Complete method source code including the method signature line"),
+    side: z.enum(["instance", "class"]).optional().default("instance")
+      .describe("'instance' for instance methods (default), 'class' for class-side methods"),
+    image: z.string().optional().describe("Server name from config (uses default if omitted)")
+  },
+  async ({ class_name, selector, source, side = "instance", image }) => {
+    // Base64 encode the source to handle newlines and special characters
+    const encoded = Buffer.from(source, 'utf8').toString('base64');
+    const result = await sendCommand(`EDIT ${class_name} ${selector} ${side} ${encoded}`, image);
+
+    if (result.status === "ok") {
+      const d = result.data;
+      const action = d.wasNew ? "Created" : "Updated";
+      const sideLabel = d.side === "class" ? " (class side)" : "";
+      return { content: [{ type: "text", text: `${action} ${d.class}>>${d.selector}${sideLabel}` }] };
+    }
+    return { content: [{ type: "text", text: formatResponse(result) }] };
+  }
+);
+
+// Tool: undo_edit
+server.tool(
+  "undo_edit",
+  "Restore the previous version of a method (single-level undo). Only works once per method after an edit.",
+  {
+    class_name: z.string().describe("The class name"),
+    selector: z.string().describe("Method selector to undo"),
+    side: z.enum(["instance", "class"]).optional().default("instance")
+      .describe("'instance' or 'class' - must match the side of the original edit"),
+    image: z.string().optional().describe("Server name from config (uses default if omitted)")
+  },
+  async ({ class_name, selector, side = "instance", image }) => {
+    const result = await sendCommand(`UNDO ${class_name} ${selector} ${side}`, image);
+
+    if (result.status === "ok") {
+      const d = result.data;
+      const sideLabel = d.side === "class" ? " (class side)" : "";
+      return { content: [{ type: "text", text: `Restored ${d.class}>>${d.selector}${sideLabel}` }] };
+    }
+    return { content: [{ type: "text", text: formatResponse(result) }] };
+  }
+);
+
+// Tool: create_class
+server.tool(
+  "create_class",
+  "Create a new class in the VisualWorks image. Fails if class already exists.",
+  {
+    name: z.string().describe("The name of the new class"),
+    superclass: z.string().optional().default("Object")
+      .describe("The superclass name (default: Object)"),
+    instance_variables: z.array(z.string()).optional().default([])
+      .describe("Instance variable names (e.g., ['name', 'age'])"),
+    class_variables: z.array(z.string()).optional().default([])
+      .describe("Class variable names (e.g., ['DefaultTimeout'])"),
+    class_instance_variables: z.array(z.string()).optional().default([])
+      .describe("Class instance variable names"),
+    category: z.string().optional().default("CliBridge-Created")
+      .describe("Category/package for the class"),
+    image: z.string().optional().describe("Server name from config (uses default if omitted)")
+  },
+  async ({ name, superclass = "Object", instance_variables = [], class_variables = [], class_instance_variables = [], category = "CliBridge-Created", image }) => {
+    // Build JSON payload and Base64 encode it
+    const payload = {
+      name,
+      superclass,
+      instanceVariables: instance_variables,
+      classVariables: class_variables,
+      classInstanceVariables: class_instance_variables,
+      category
+    };
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+    const result = await sendCommand(`CREATECLASS ${encoded}`, image);
+
+    if (result.status === "ok") {
+      const d = result.data;
+      return { content: [{ type: "text", text: `Created class ${d.name} < ${d.superclass} in category '${d.category}'` }] };
+    }
+    return { content: [{ type: "text", text: formatResponse(result) }] };
+  }
+);
+
 // Tool: list_images
 server.tool(
   "list_images",

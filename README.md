@@ -6,6 +6,7 @@ A TCP bridge that exposes VisualWorks Smalltalk code browsing and evaluation cap
 
 - Browse classes, methods, and hierarchies
 - Read source code (when available)
+- **Create classes** and **edit methods** with single-level undo support
 - Evaluate arbitrary Smalltalk expressions
 - Find senders and implementors of selectors
 - Analyze compiled methods (messages sent, literals referenced)
@@ -154,6 +155,9 @@ All tools accept an optional `image` parameter to target a specific server from 
 | `senders` | Find all callers of a selector |
 | `implementors` | Find all implementations of a selector |
 | `messages` | Get messages/literals from a method |
+| `edit_method` | Add or replace a method (auto-backup for undo) |
+| `undo_edit` | Restore previous version of a method |
+| `create_class` | Create a new class with specified superclass and variables |
 
 ## Protocol
 
@@ -178,7 +182,34 @@ SEARCH pattern                → [{type, name/class, selector}, ...]
 SENDERS selector              → [{class, selector}, ...]
 IMPLEMENTORS selector         → [{class, side}, ...]
 MESSAGES className selector   → {messages, literals}
+EDIT className selector side base64Source → {class, selector, side, wasNew}
+UNDO className selector side  → {restored, class, selector, side}
+CREATECLASS base64JsonPayload → {created, name, superclass, category}
 ```
+
+### Edit Protocol Notes
+
+The `EDIT` command uses Base64-encoded source to handle multi-line methods:
+- `side`: "instance" or "class"
+- `base64Source`: Complete method source including signature line, Base64-encoded
+- Previous version is automatically saved for single-level undo
+- Undo is cleared after use (single-level only)
+
+### Create Class Protocol
+
+The `CREATECLASS` command uses a Base64-encoded JSON payload:
+```json
+{
+  "name": "MyClass",
+  "superclass": "Object",
+  "instanceVariables": ["foo", "bar"],
+  "classVariables": ["SharedState"],
+  "classInstanceVariables": [],
+  "category": "MyApp-Model"
+}
+```
+- Fails if class already exists
+- All fields except `name` are optional
 
 ## CLI Wrapper (vwcli)
 
@@ -264,6 +295,7 @@ Without auth prefix, you'll receive:
 - `startOn:` - No auth, suitable for local development
 - `startWithAuthOn:` - Auth required for ALL connections
 - `eval` command executes arbitrary code - use with caution
+- `edit` command modifies code in the running image - changes are immediate
 - API keys are transmitted in plaintext - use SSH tunnel or VPN for untrusted networks
 
 ## Troubleshooting
