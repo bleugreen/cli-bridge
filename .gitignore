@@ -20,3 +20,4 @@ Thumbs.db
 # VisualWorks Smalltalk (if generated/local)
 *.im
 *.cha
+coverage/
