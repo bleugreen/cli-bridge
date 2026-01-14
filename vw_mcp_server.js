@@ -24,6 +24,14 @@ import net from 'net';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import {
+  validateClassName,
+  validateSelector,
+  validatePattern,
+  validateExpression,
+  validateSource,
+  validateServerName,
+} from './lib/validation.js';
 
 const TIMEOUT = 30000; // 30 seconds
 
@@ -165,6 +173,16 @@ function sendCommand(command, imageName) {
 }
 
 /**
+ * Format a validation error for MCP response
+ */
+function validationError(result) {
+  return {
+    content: [{ type: 'text', text: `Validation error: ${result.error}` }],
+    isError: true,
+  };
+}
+
+/**
  * Format a CliBridge response for display
  */
 function formatResponse(result) {
@@ -201,6 +219,9 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ image }) => {
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand('PING', image);
     if (result.status === 'ok') {
       const server = getServer(image);
@@ -230,6 +251,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ pattern, image }) => {
+    const patternValidation = validatePattern(pattern);
+    if (!patternValidation.valid) return validationError(patternValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`CLASSES ${pattern}`, image);
     return { content: [{ type: 'text', text: formatResponse(result) }] };
   }
@@ -244,6 +271,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`CLASS ${class_name}`, image);
     if (result.status === 'ok') {
       const d = result.data;
@@ -275,6 +308,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, side, image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`METHODS ${class_name} ${side}`, image);
     return { content: [{ type: 'text', text: formatResponse(result) }] };
   }
@@ -290,6 +329,15 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, selector, image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const selectorValidation = validateSelector(selector);
+    if (!selectorValidation.valid) return validationError(selectorValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`SOURCE ${class_name} ${selector}`, image);
     return { content: [{ type: 'text', text: formatResponse(result) }] };
   }
@@ -304,6 +352,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`FULLSOURCE ${class_name}`, image);
     return { content: [{ type: 'text', text: formatResponse(result) }] };
   }
@@ -318,6 +372,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`HIERARCHY ${class_name}`, image);
     if (result.status === 'ok') {
       const d = result.data;
@@ -345,6 +405,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ expression, image }) => {
+    const exprValidation = validateExpression(expression);
+    if (!exprValidation.valid) return validationError(exprValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`EVAL ${expression}`, image);
     if (result.status === 'ok') {
       const d = result.data;
@@ -362,6 +428,9 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ image }) => {
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand('NAMESPACES', image);
     return { content: [{ type: 'text', text: formatResponse(result) }] };
   }
@@ -376,6 +445,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ pattern, image }) => {
+    const patternValidation = validatePattern(pattern);
+    if (!patternValidation.valid) return validationError(patternValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`SEARCH ${pattern}`, image);
     if (result.status === 'ok') {
       const data = result.data || [];
@@ -404,6 +479,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ selector, image }) => {
+    const selectorValidation = validateSelector(selector);
+    if (!selectorValidation.valid) return validationError(selectorValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`SENDERS ${selector}`, image);
     if (result.status === 'ok') {
       const data = result.data || [];
@@ -431,6 +512,12 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ selector, image }) => {
+    const selectorValidation = validateSelector(selector);
+    if (!selectorValidation.valid) return validationError(selectorValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`IMPLEMENTORS ${selector}`, image);
     if (result.status === 'ok') {
       const data = result.data || [];
@@ -461,6 +548,15 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, selector, image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const selectorValidation = validateSelector(selector);
+    if (!selectorValidation.valid) return validationError(selectorValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`MESSAGES ${class_name} ${selector}`, image);
     if (result.status === 'ok') {
       const d = result.data;
@@ -495,6 +591,18 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, selector, source, side = 'instance', image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const selectorValidation = validateSelector(selector);
+    if (!selectorValidation.valid) return validationError(selectorValidation);
+
+    const sourceValidation = validateSource(source);
+    if (!sourceValidation.valid) return validationError(sourceValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     // Base64 encode the source to handle newlines and special characters
     const encoded = Buffer.from(source, 'utf8').toString('base64');
     const result = await sendCommand(`EDIT ${class_name} ${selector} ${side} ${encoded}`, image);
@@ -526,6 +634,15 @@ server.tool(
     image: z.string().optional().describe('Server name from config (uses default if omitted)'),
   },
   async ({ class_name, selector, side = 'instance', image }) => {
+    const classValidation = validateClassName(class_name);
+    if (!classValidation.valid) return validationError(classValidation);
+
+    const selectorValidation = validateSelector(selector);
+    if (!selectorValidation.valid) return validationError(selectorValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     const result = await sendCommand(`UNDO ${class_name} ${selector} ${side}`, image);
 
     if (result.status === 'ok') {
@@ -581,6 +698,15 @@ server.tool(
     category = 'CliBridge-Created',
     image,
   }) => {
+    const nameValidation = validateClassName(name);
+    if (!nameValidation.valid) return validationError(nameValidation);
+
+    const superclassValidation = validateClassName(superclass);
+    if (!superclassValidation.valid) return validationError(superclassValidation);
+
+    const serverValidation = validateServerName(image);
+    if (!serverValidation.valid) return validationError(serverValidation);
+
     // Build JSON payload and Base64 encode it
     const payload = {
       name,
