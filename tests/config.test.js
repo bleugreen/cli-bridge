@@ -11,8 +11,6 @@ import os from 'os';
 vi.mock('fs');
 
 describe('Configuration Loading', () => {
-  let loadConfig, getServer;
-
   beforeEach(async () => {
     // Reset fs mocks
     vi.mocked(fs.existsSync).mockReturnValue(false);
@@ -20,9 +18,7 @@ describe('Configuration Loading', () => {
 
     // Dynamically import to get fresh module with reset cache
     vi.resetModules();
-    const module = await import('../vw_mcp_server.js');
-    // Note: loadConfig and getServer are not exported, so we test via getServer behavior
-    // We'll need to export them or test indirectly
+    await import('../vw_mcp_server.js');
   });
 
   describe('loadConfig', () => {

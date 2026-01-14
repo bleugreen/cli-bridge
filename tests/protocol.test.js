@@ -3,7 +3,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { EventEmitter } from 'events';
 import fs from 'fs';
 
 // Mock fs module
@@ -222,7 +221,7 @@ describe('Command Protocol', () => {
       expect(mockSocket.destroy).toHaveBeenCalled();
     });
 
-    it('sets socket timeout to 30 seconds', async () => {
+    it('sets socket timeout to 30 seconds', () => {
       if (!testExports) return;
 
       testExports.sendCommand('PING');
@@ -256,49 +255,49 @@ describe('Command Protocol', () => {
   });
 
   describe('formatResponse', () => {
-    it('formats error responses', async () => {
+    it('formats error responses', () => {
       if (!testExports) return;
 
       const result = testExports.formatResponse({ status: 'error', message: 'Test error' });
       expect(result).toBe('Error: Test error');
     });
 
-    it('formats string data', async () => {
+    it('formats string data', () => {
       if (!testExports) return;
 
       const result = testExports.formatResponse({ status: 'ok', data: 'Hello world' });
       expect(result).toBe('Hello world');
     });
 
-    it('formats array data as newline-separated', async () => {
+    it('formats array data as newline-separated', () => {
       if (!testExports) return;
 
       const result = testExports.formatResponse({ status: 'ok', data: ['one', 'two', 'three'] });
       expect(result).toBe('one\ntwo\nthree');
     });
 
-    it('formats object data as JSON', async () => {
+    it('formats object data as JSON', () => {
       if (!testExports) return;
 
       const result = testExports.formatResponse({ status: 'ok', data: { key: 'value' } });
       expect(result).toBe('{\n  "key": "value"\n}');
     });
 
-    it('handles null data', async () => {
+    it('handles null data', () => {
       if (!testExports) return;
 
       const result = testExports.formatResponse({ status: 'ok', data: null });
       expect(result).toBe('No data returned');
     });
 
-    it('handles undefined data', async () => {
+    it('handles undefined data', () => {
       if (!testExports) return;
 
       const result = testExports.formatResponse({ status: 'ok' });
       expect(result).toBe('No data returned');
     });
 
-    it('handles unknown error message', async () => {
+    it('handles unknown error message', () => {
       if (!testExports) return;
 
       const result = testExports.formatResponse({ status: 'error' });

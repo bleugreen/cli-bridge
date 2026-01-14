@@ -27,6 +27,10 @@
     "globals": "^15.0.0",
     "prettier": "^3.0.0"
   },
-  "keywords": ["mcp", "visualworks", "smalltalk"],
+  "keywords": [
+    "mcp",
+    "visualworks",
+    "smalltalk"
+  ],
   "license": "MIT"
 }

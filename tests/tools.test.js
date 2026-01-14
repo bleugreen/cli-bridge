@@ -369,7 +369,12 @@ describe('MCP Tools', () => {
       const encoded = Buffer.from(source).toString('base64');
 
       const { captured } = installMockSocket(net, {
-        response: okResponse({ class: 'MyClass', selector: 'myMethod', wasNew: true, side: 'instance' }),
+        response: okResponse({
+          class: 'MyClass',
+          selector: 'myMethod',
+          wasNew: true,
+          side: 'instance',
+        }),
       });
 
       const result = await sendCommand(`EDIT MyClass myMethod instance ${encoded}`);
@@ -385,7 +390,12 @@ describe('MCP Tools', () => {
       const encoded = Buffer.from('myMethod\n\t^99').toString('base64');
 
       installMockSocket(net, {
-        response: okResponse({ class: 'MyClass', selector: 'myMethod', wasNew: false, side: 'instance' }),
+        response: okResponse({
+          class: 'MyClass',
+          selector: 'myMethod',
+          wasNew: false,
+          side: 'instance',
+        }),
       });
 
       const result = await sendCommand(`EDIT MyClass myMethod instance ${encoded}`);

@@ -2,21 +2,21 @@
 
 ## Working Tools
 
-| Tool | Status | Notes |
-|------|--------|-------|
-| `ping` | OK | Confirms connection to CliBridge |
-| `classes` | OK | Pattern filtering works, found 6900+ classes |
-| `class_info` | OK | Shows superclass, ivars, cvars |
-| `methods` | OK | Lists instance/class methods |
-| `source` | OK | Gets individual method source |
-| `fullsource` | OK | All methods for a class - very useful |
-| `hierarchy` | OK | Shows ancestors and direct subclasses |
-| `eval_smalltalk` | OK | Arbitrary expression evaluation - powerful |
-| `search` | OK | Finds classes and methods by pattern |
-| `senders` | NEW | Find all callers of a selector |
-| `implementors` | NEW | Find all classes implementing a selector |
-| `messages` | NEW | Get messages/literals from a method (works without source!) |
-| `namespaces` | ? | Timed out - may need investigation |
+| Tool             | Status | Notes                                                       |
+| ---------------- | ------ | ----------------------------------------------------------- |
+| `ping`           | OK     | Confirms connection to CliBridge                            |
+| `classes`        | OK     | Pattern filtering works, found 6900+ classes                |
+| `class_info`     | OK     | Shows superclass, ivars, cvars                              |
+| `methods`        | OK     | Lists instance/class methods                                |
+| `source`         | OK     | Gets individual method source                               |
+| `fullsource`     | OK     | All methods for a class - very useful                       |
+| `hierarchy`      | OK     | Shows ancestors and direct subclasses                       |
+| `eval_smalltalk` | OK     | Arbitrary expression evaluation - powerful                  |
+| `search`         | OK     | Finds classes and methods by pattern                        |
+| `senders`        | NEW    | Find all callers of a selector                              |
+| `implementors`   | NEW    | Find all classes implementing a selector                    |
+| `messages`       | NEW    | Get messages/literals from a method (works without source!) |
+| `namespaces`     | ?      | Timed out - may need investigation                          |
 
 ## Source Code Availability
 

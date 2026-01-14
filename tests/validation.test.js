@@ -268,8 +268,8 @@ describe('Input Validation', () => {
     });
 
     it('accepts expressions with newlines and tabs', () => {
-      expect(validateExpression("| x |\nx := 1.\n^x")).toEqual({ valid: true });
-      expect(validateExpression("^self\n\tprintString")).toEqual({ valid: true });
+      expect(validateExpression('| x |\nx := 1.\n^x')).toEqual({ valid: true });
+      expect(validateExpression('^self\n\tprintString')).toEqual({ valid: true });
     });
 
     it('rejects empty expressions', () => {

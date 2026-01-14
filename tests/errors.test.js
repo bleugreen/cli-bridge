@@ -248,7 +248,7 @@ describe('Error Handling', () => {
       const { socket, events } = installMockSocket(net, {});
 
       // Override to manually control flow
-      socket.connect = vi.fn((port, host) => {
+      socket.connect = vi.fn((_port, _host) => {
         setImmediate(() => {
           events.connect?.();
           events.end?.(); // Close immediately without data
@@ -280,7 +280,7 @@ describe('Error Handling', () => {
       if (!sendCommand) return;
 
       const specialData = {
-        source: "method\n\t\"A comment with 'quotes'\"\n\t^self + 1",
+        source: 'method\n\t"A comment with \'quotes\'"\n\t^self + 1',
         class: 'Test\u0000Class', // null byte
       };
 
@@ -310,14 +310,14 @@ describe('Error Handling', () => {
   });
 
   describe('formatResponse Error Cases', () => {
-    it('handles error response with missing message', async () => {
+    it('handles error response with missing message', () => {
       if (!testExports) return;
 
       const formatted = testExports.formatResponse({ status: 'error' });
       expect(formatted).toBe('Error: Unknown error');
     });
 
-    it('handles primitive data types', async () => {
+    it('handles primitive data types', () => {
       if (!testExports) return;
 
       expect(testExports.formatResponse({ status: 'ok', data: 42 })).toBe('42');
@@ -325,7 +325,7 @@ describe('Error Handling', () => {
       expect(testExports.formatResponse({ status: 'ok', data: false })).toBe('false');
     });
 
-    it('handles deeply nested objects', async () => {
+    it('handles deeply nested objects', () => {
       if (!testExports) return;
 
       const nested = {

@@ -29,6 +29,7 @@ CliBridge startWithAuthOn: 9999.
 ```
 
 Or start with command line argument:
+
 ```bash
 ./vwlinuxx86_64gui myimage.im -clibridge:9999
 ```
@@ -70,6 +71,7 @@ The MCP tools will be available after restart.
 Create a config file to manage multiple Smalltalk images:
 
 **~/.config/clibridge/servers.json** or **~/.clibridge/servers.json**:
+
 ```json
 {
   "servers": {
@@ -93,6 +95,7 @@ Create a config file to manage multiple Smalltalk images:
 ```
 
 Then add the MCP server:
+
 ```bash
 claude mcp add --transport stdio visualworks \
   --env CLIBRIDGE_CONFIG=~/.config/clibridge/servers.json \
@@ -100,6 +103,7 @@ claude mcp add --transport stdio visualworks \
 ```
 
 All tools accept an optional `image` parameter to target a specific server:
+
 ```
 mcp__visualworks__classes({ pattern: "Http" })                  # uses default
 mcp__visualworks__classes({ pattern: "Http", image: "production" })  # uses production
@@ -110,11 +114,11 @@ mcp__visualworks__list_images()                                 # shows all serv
 
 For simple setups, you can use environment variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VWCLI_HOST` | `localhost` | Host running CliBridge |
-| `VWCLI_PORT` | `9999` | Port CliBridge is listening on |
-| `VWCLI_API_KEY` | (none) | API key for authentication |
+| Variable        | Default     | Description                    |
+| --------------- | ----------- | ------------------------------ |
+| `VWCLI_HOST`    | `localhost` | Host running CliBridge         |
+| `VWCLI_PORT`    | `9999`      | Port CliBridge is listening on |
+| `VWCLI_API_KEY` | (none)      | API key for authentication     |
 
 ### Project-Level Config (.mcp.json)
 
@@ -139,25 +143,25 @@ For team sharing, create `.mcp.json` in your project root:
 
 All tools accept an optional `image` parameter to target a specific server from your config.
 
-| Tool | Description |
-|------|-------------|
-| `ping` | Test connection to CliBridge |
-| `list_images` | List all configured servers |
-| `classes` | List classes (with optional pattern filter) |
-| `class_info` | Get class definition (superclass, ivars, cvars) |
-| `methods` | List instance or class methods |
-| `source` | Get method source code |
-| `fullsource` | Get all source for a class |
-| `hierarchy` | Show superclasses and subclasses |
-| `eval_smalltalk` | Evaluate Smalltalk expressions |
-| `namespaces` | List all namespaces |
-| `search` | Search classes and methods by pattern |
-| `senders` | Find all callers of a selector |
-| `implementors` | Find all implementations of a selector |
-| `messages` | Get messages/literals from a method |
-| `edit_method` | Add or replace a method (auto-backup for undo) |
-| `undo_edit` | Restore previous version of a method |
-| `create_class` | Create a new class with specified superclass and variables |
+| Tool             | Description                                                |
+| ---------------- | ---------------------------------------------------------- |
+| `ping`           | Test connection to CliBridge                               |
+| `list_images`    | List all configured servers                                |
+| `classes`        | List classes (with optional pattern filter)                |
+| `class_info`     | Get class definition (superclass, ivars, cvars)            |
+| `methods`        | List instance or class methods                             |
+| `source`         | Get method source code                                     |
+| `fullsource`     | Get all source for a class                                 |
+| `hierarchy`      | Show superclasses and subclasses                           |
+| `eval_smalltalk` | Evaluate Smalltalk expressions                             |
+| `namespaces`     | List all namespaces                                        |
+| `search`         | Search classes and methods by pattern                      |
+| `senders`        | Find all callers of a selector                             |
+| `implementors`   | Find all implementations of a selector                     |
+| `messages`       | Get messages/literals from a method                        |
+| `edit_method`    | Add or replace a method (auto-backup for undo)             |
+| `undo_edit`      | Restore previous version of a method                       |
+| `create_class`   | Create a new class with specified superclass and variables |
 
 ## Protocol
 
@@ -190,6 +194,7 @@ CREATECLASS base64JsonPayload → {created, name, superclass, category}
 ### Edit Protocol Notes
 
 The `EDIT` command uses Base64-encoded source to handle multi-line methods:
+
 - `side`: "instance" or "class"
 - `base64Source`: Complete method source including signature line, Base64-encoded
 - Previous version is automatically saved for single-level undo
@@ -198,6 +203,7 @@ The `EDIT` command uses Base64-encoded source to handle multi-line methods:
 ### Create Class Protocol
 
 The `CREATECLASS` command uses a Base64-encoded JSON payload:
+
 ```json
 {
   "name": "MyClass",
@@ -208,6 +214,7 @@ The `CREATECLASS` command uses a Base64-encoded JSON payload:
   "category": "MyApp-Model"
 }
 ```
+
 - Fails if class already exists
 - All fields except `name` are optional
 
@@ -243,12 +250,12 @@ export VWCLI_PORT=9999
 
 ## Files
 
-| File | Description |
-|------|-------------|
-| `CliBridge.st` | Smalltalk server (file into VW image) |
-| `vw_mcp_server.js` | MCP server for Claude Code |
-| `vwcli` | Bash CLI wrapper for testing |
-| `package.json` | Node.js dependencies |
+| File               | Description                           |
+| ------------------ | ------------------------------------- |
+| `CliBridge.st`     | Smalltalk server (file into VW image) |
+| `vw_mcp_server.js` | MCP server for Claude Code            |
+| `vwcli`            | Bash CLI wrapper for testing          |
+| `package.json`     | Node.js dependencies                  |
 
 ## Requirements
 
@@ -271,6 +278,7 @@ CliBridge startWithAuthOn: 9999.
 ```
 
 The API key is:
+
 - Generated once on first `startWithAuthOn:` call
 - Persisted in `~/.clibridge/api-key`
 - Printed to Transcript so you can copy it
@@ -286,8 +294,9 @@ AUTH:vw_abc123 CLASSES Array
 ```
 
 Without auth prefix, you'll receive:
+
 ```json
-{"status":"error","code":"AUTH_REQUIRED","message":"Authentication required"}
+{ "status": "error", "code": "AUTH_REQUIRED", "message": "Authentication required" }
 ```
 
 ### Security Notes
@@ -301,18 +310,22 @@ Without auth prefix, you'll receive:
 ## Troubleshooting
 
 **Connection refused:**
+
 - Ensure CliBridge is running: `CliBridge default` should return the instance
 - Check port: `CliBridge default port`
 
 **Connection timeout:**
+
 - Verify host/port settings
 - Check firewall allows the port
 
 **No source available:**
+
 - Some deployed images don't include source code
 - Use `messages` tool to analyze compiled methods
 
 **Port already in use:**
+
 - Wait ~30 seconds for TIME_WAIT to clear
 - Or use a different port
 
