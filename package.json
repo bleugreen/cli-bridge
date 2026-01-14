@@ -8,10 +8,17 @@
     "visualworks-mcp": "./vw_mcp_server.js"
   },
   "scripts": {
-    "start": "node vw_mcp_server.js"
+    "start": "node vw_mcp_server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "@vitest/coverage-v8": "^2.0.0"
   },
   "keywords": ["mcp", "visualworks", "smalltalk"],
   "license": "MIT"

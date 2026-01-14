@@ -569,7 +569,17 @@ async function main() {
   await server.connect(transport);
 }
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
+// Export internals for testing (only when not running as main)
+export const testExports =
+  process.env.NODE_ENV === 'test' || process.env.VITEST
+    ? { loadConfig, getServer, sendCommand, formatResponse, clearConfigCache: () => { cachedConfig = null; } }
+    : null;
+
+// Only start server when run directly (not when imported for testing)
+const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  main().catch((error) => {
+    console.error("Fatal error:", error);
+    process.exit(1);
+  });
+}
