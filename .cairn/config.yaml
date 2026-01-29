@@ -1,0 +1,20 @@
+# Cairn Configuration for VisualWorks Smalltalk CLI Bridge
+
+# Setup commands run when creating new worktrees
+setupCommands:
+  - npm install
+
+# No files need to be copied - configs are in ~/.config/clibridge/ or env vars
+copyFiles: []
+
+# Terminal commands for development
+terminalCommands:
+  - name: Start MCP Server
+    command: npm start
+    # Note: Requires CliBridge running in VisualWorks image first
+
+# No CI commands - project has no test suite
+ciCommands: []
+
+# Base branch for worktrees
+defaultBranch: main
