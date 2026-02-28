@@ -192,15 +192,32 @@ server.tool(
   "ping",
   "Test connection to the VisualWorks CliBridge server",
   {
-    image: z.string().optional().describe("Server name from config (uses default if omitted)")
+    image: z.string().optional().describe("Server name from config (pings all servers if omitted)")
   },
   async ({ image }) => {
-    const result = await sendCommand("PING", image);
-    if (result.status === "ok") {
-      const server = getServer(image);
-      return { content: [{ type: "text", text: `Connected to CliBridge '${server.name}' at ${server.host}:${server.port}` }] };
+    if (image) {
+      const result = await sendCommand("PING", image);
+      if (result.status === "ok") {
+        const server = getServer(image);
+        return { content: [{ type: "text", text: `Connected to CliBridge '${server.name}' at ${server.host}:${server.port}` }] };
+      }
+      return { content: [{ type: "text", text: formatResponse(result) }] };
     }
-    return { content: [{ type: "text", text: formatResponse(result) }] };
+
+    // Ping all configured servers
+    const config = loadConfig();
+    const serverNames = Object.keys(config.servers);
+    const results = await Promise.all(
+      serverNames.map(async (name) => {
+        const srv = getServer(name);
+        const result = await sendCommand("PING", name);
+        if (result.status === "ok") {
+          return `✓ ${name} (${srv.host}:${srv.port})`;
+        }
+        return `✗ ${name} (${srv.host}:${srv.port}) - ${result.message || "Unknown error"}`;
+      })
+    );
+    return { content: [{ type: "text", text: results.join('\n') }] };
   }
 );
 
