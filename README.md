@@ -14,7 +14,21 @@ A TCP bridge that exposes VisualWorks Smalltalk code browsing and evaluation cap
 
 ## Quick Start
 
-### 1. Start CliBridge in VisualWorks
+### Automated Setup
+
+The setup script installs dependencies, configures your server connections, and registers the MCP server with Claude Code:
+
+```bash
+bun setup.ts
+```
+
+It will walk you through:
+1. Installing Node.js dependencies
+2. Configuring which VisualWorks images to connect to (`~/.config/clibridge/servers.json`)
+3. Registering the MCP server with Claude Code
+4. Testing connectivity to your images
+
+### Start CliBridge in VisualWorks
 
 ```smalltalk
 "File in the code"
@@ -33,35 +47,21 @@ Or start with command line argument:
 ./vwlinuxx86_64gui myimage.im -clibridge:9999
 ```
 
-### 2. Install MCP Server Dependencies
+Then restart Claude Code to pick up the MCP server.
+
+### Manual Setup
+
+If you prefer to set up manually (or don't have bun):
 
 ```bash
-cd /path/to/cli-bridge
 npm install
+
+claude mcp add -s user -t stdio \
+  -e CLIBRIDGE_CONFIG=~/.config/clibridge/servers.json \
+  visualworks -- node /absolute/path/to/vw_mcp_server.js
 ```
 
-### 3. Add MCP Server to Claude Code
-
-```bash
-# Local connection (defaults to localhost:9999)
-claude mcp add --transport stdio visualworks \
-  -- node /path/to/cli-bridge/vw_mcp_server.js
-
-# Custom port
-claude mcp add --transport stdio visualworks \
-  --env VWCLI_PORT=9999 \
-  -- node /path/to/cli-bridge/vw_mcp_server.js
-
-# Remote connection (different machine)
-claude mcp add --transport stdio visualworks \
-  --env VWCLI_HOST=192.168.1.100 \
-  --env VWCLI_PORT=9999 \
-  -- node /path/to/cli-bridge/vw_mcp_server.js
-```
-
-### 4. Restart Claude Code
-
-The MCP tools will be available after restart.
+See [Configuration](#configuration) below for the servers.json format.
 
 ## Configuration
 
@@ -247,13 +247,15 @@ export VWCLI_PORT=9999
 |------|-------------|
 | `CliBridge.st` | Smalltalk server (file into VW image) |
 | `vw_mcp_server.js` | MCP server for Claude Code |
+| `setup.ts` | Interactive setup script (`bun setup.ts`) |
 | `vwcli` | Bash CLI wrapper for testing |
 | `package.json` | Node.js dependencies |
 
 ## Requirements
 
 - VisualWorks Smalltalk 8.x or 9.x
-- Node.js 18+ (run `npm install` in this directory)
+- Node.js 18+ (for MCP server runtime)
+- [Bun](https://bun.sh) (for setup script — optional if setting up manually)
 - Claude Code (for MCP integration)
 
 ## Authentication
