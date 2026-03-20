@@ -8,11 +8,15 @@
     "visualworks-mcp": "./vw_mcp_server.js"
   },
   "scripts": {
-    "start": "node vw_mcp_server.js"
+    "start": "node vw_mcp_server.js",
+    "setup": "bun setup.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
   },
   "keywords": ["mcp", "visualworks", "smalltalk"],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@inquirer/prompts": "^8.3.2"
+  }
 }
